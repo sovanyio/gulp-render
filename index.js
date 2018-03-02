@@ -10,12 +10,10 @@
 
 var through = require('through2');
 var gutil = require('gulp-util');
-var path = require('path');
 var fs = require('fs');
 var _ = require('lodash');
 var React = require('react');
-var ReactTools = require('react-tools');
-var hyphenate = require('react/lib/hyphenate');
+var ReactDOM = require('react-dom/server');
 var template = _.template;
 var PluginError = gutil.PluginError;
 var Module = module.constructor;
@@ -28,22 +26,12 @@ var PLUGIN_NAME = 'gulp-render';
  */
 function appendJsxPragma(filename, contents) {
   return filename.match(/\.jsx$/) || filename.match(/[\-\.]react\.js$/) ?
-  '/**@jsx React.DOM*/' + contents : contents;
+  '/** @jsx ReactDOM */' + contents : contents;
 }
 
-/**
- * Check if Page component has a layout property; and if yes, wrap the page
- * into the specified layout, then render to a string.
- */
 function renderToString(page) {
-  var layout = null, child = null, props = {};
-  while ((layout = page.type.layout || (page.defaultProps && page.defaultProps.layout))) {
-    child = React.createElement(page, props, child);
-    _.extend(props, page.defaultProps);
-    React.renderToString(React.createElement(page, props, child));
-    page = layout;
-  }
-  return React.renderToString(React.createElement(page, props, child));
+  var child = null, props = {};
+  return ReactDOM.renderToString(React.createElement(page, props, child));
 }
 
 /**
@@ -51,18 +39,13 @@ function renderToString(page) {
  * http://facebook.github.io/react/docs/top-level-api.html#react.rendertostaticmarkup
  */
 function renderToStaticMarkup(page) {
-  return React.renderToStaticMarkup(React.createElement(page));
+  return ReactDOM.renderToStaticMarkup(React.createElement(page));
 }
 
 // Plugin level function (dealing with files)
 function Plugin(options) {
 
   options = options || {};
-
-  var reactOptions = {
-    harmony: typeof options.harmony === 'undefined' ? true : options.harmony,
-    stripTypes: typeof options.stripTypes === 'undefined' ? true : options.stripTypes
-  };
 
   if (options.template && options.template.indexOf('<') === -1) {
     options.template = fs.readFileSync(options.template, {encoding: 'utf8'});
@@ -74,7 +57,6 @@ function Plugin(options) {
     if (filename.indexOf('node_modules') === -1) {
       var src = fs.readFileSync(filename, {encoding: 'utf8'});
       src = appendJsxPragma(filename, src);
-      src = ReactTools.transform(src, reactOptions);
       module._compile(src, filename);
     } else {
       originalJsTransform(module, filename);
@@ -99,7 +81,6 @@ function Plugin(options) {
         try {
           var contents = file.contents.toString('utf8');
           contents = appendJsxPragma(file.path, contents);
-          contents = ReactTools.transform(contents, reactOptions);
           var m = new Module();
           m.id = file.path;
           m.filename = file.path;
@@ -117,17 +98,11 @@ function Plugin(options) {
             data.description = data.description || '';
             data.keywords = data.keywords || '';
 
-            markup = template(options.template, data);
+            markup = template(options.template)(data);
           }
 
           file.contents = new Buffer(markup);
           var filename = gutil.replaceExtension(file.path, '.html');
-
-          if (typeof options.hyphenate === 'undefined' || options.hyphenate) {
-            filename = hyphenate(path.basename(filename));
-            filename = filename.lastIndexOf('-', 0) === 0 ? filename.substring(1) : filename;
-            filename = path.join(path.dirname(file.path), filename);
-          }
 
           file.path = filename;
         } catch (err) {
